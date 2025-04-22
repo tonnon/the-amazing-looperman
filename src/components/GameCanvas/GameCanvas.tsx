@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './GameCanvas.css';
 
 interface Star {
@@ -18,6 +18,15 @@ interface PortalParticle {
   life: number;
 }
 
+interface Player {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  speed: number;
+  image: HTMLImageElement | null;
+}
+
 const GameCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const starsRef = useRef<Star[]>([]);
@@ -25,19 +34,33 @@ const GameCanvas = () => {
   const orangeParticlesRef = useRef<PortalParticle[]>([]);
   const glowPulseRef = useRef<number>(0);
   const animationRef = useRef<number>();
+  const [player, setPlayer] = useState<Player>({
+    x: 65,
+    y: 420,
+    width: 60,
+    height: 80,
+    speed: 5,
+    image: null
+  });
+  const keysPressed = useRef({
+    left: false,
+    right: false,
+    a: false,
+    d: false
+  });
 
-  // Configurações ajustadas
+  // Portal Configurations
   const PORTAL_RADIUS = 70;
-  const PORTAL_HEIGHT_RATIO = 0.6; // Fator de achatamento vertical
+  const PORTAL_HEIGHT_RATIO = 0.6;
   const INNER_PARTICLES = 100;
   const GLOW_PARTICLES = 120;
 
-  // Posições mais extremas (10% e 90% da largura)
+  // Portal positions
   const BLUE_PORTAL_X = () => canvasRef.current ? canvasRef.current.width * 0.05 : 0;
   const ORANGE_PORTAL_X = () => canvasRef.current ? canvasRef.current.width * 0.95 : 0;
   const PORTAL_Y = () => canvasRef.current ? canvasRef.current.height * 0.5 : 0;
 
-  // Inicialização
+  // Initialize stars
   const initStars = (canvas: HTMLCanvasElement) => {
     starsRef.current = Array.from({ length: 200 }).map(() => ({
       x: Math.random() * canvas.width,
@@ -47,16 +70,17 @@ const GameCanvas = () => {
     }));
   };
 
+  // Initialize portal particles
   const initPortalParticles = () => {
     blueParticlesRef.current = createParticles(true);
     orangeParticlesRef.current = createParticles(false);
   };
 
+  // Create particles
   const createParticles = (isBlue: boolean) => {
     const centerX = isBlue ? BLUE_PORTAL_X() : ORANGE_PORTAL_X();
     const particles: PortalParticle[] = [];
     
-    // Partículas internas
     for (let i = 0; i < INNER_PARTICLES; i++) {
       particles.push({
         x: centerX,
@@ -69,7 +93,6 @@ const GameCanvas = () => {
       });
     }
     
-    // Partículas de brilho
     for (let i = 0; i < GLOW_PARTICLES; i++) {
       particles.push({
         x: centerX,
@@ -85,10 +108,9 @@ const GameCanvas = () => {
     return particles;
   };
 
-  // Atualização de partículas
+  // Update particles
   const updateParticles = () => {
     glowPulseRef.current = (glowPulseRef.current + 0.21) % (Math.PI * 4);
-    
     blueParticlesRef.current = blueParticlesRef.current.map(updateParticle(true));
     orangeParticlesRef.current = orangeParticlesRef.current.map(updateParticle(false));
   };
@@ -102,7 +124,7 @@ const GameCanvas = () => {
       
       return {
         ...p,
-        x: centerX + Math.cos(p.angle) * radius * 0.3, // Mais achatado horizontalmente
+        x: centerX + Math.cos(p.angle) * radius * 0.3,
         y: PORTAL_Y() + Math.sin(p.angle) * radius * PORTAL_HEIGHT_RATIO,
         z: newZ,
         angle: p.angle + p.speed * 3,
@@ -124,39 +146,26 @@ const GameCanvas = () => {
     }
   };
 
-  // Renderização
-  const drawScene = (ctx: CanvasRenderingContext2D) => {
-    // Fundo espacial
-    ctx.fillStyle = '#050520';
-    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    
-    // Estrelas
-    starsRef.current.forEach(star => {
-      ctx.beginPath();
-      ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness})`;
-      ctx.fill();
-    });
+  // Update player position - now modifies player ref directly
+  const updatePlayer = () => {
+    const { right, d } = keysPressed.current;
+    let moveX = 0;
 
-    // Portal Azul (esquerda)
-    drawVerticalPortal(
-      ctx,
-      BLUE_PORTAL_X(),
-      PORTAL_Y(),
-      ['#00aeff', '#0066ff', '#00f2ff'],
-      blueParticlesRef.current
-    );
+    if (right || d) moveX += player.speed;
 
-    // Portal Laranja (direita)
-    drawVerticalPortal(
-      ctx,
-      ORANGE_PORTAL_X(),
-      PORTAL_Y(),
-      ['#ff9d00', '#ff5500', '#ffec00'],
-      orangeParticlesRef.current
-    );
+    if (moveX !== 0 && canvasRef.current) {
+      const newX = player.x + moveX;
+      const boundedX = Math.max(0, Math.min(newX, canvasRef.current.width - player.width));
+      
+      // Update player position directly in the ref
+      player.x = boundedX;
+      
+      // Force re-render by updating state with a new object
+      setPlayer({...player});
+    }
   };
 
+  // Draw vertical portal
   const drawVerticalPortal = (
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -164,7 +173,6 @@ const GameCanvas = () => {
     colors: string[],
     particles: PortalParticle[]
   ) => {
-    // Glow externo (agora do mesmo tamanho do portal)
     const glow = ctx.createRadialGradient(x, y, 0, x, y, PORTAL_RADIUS * 5);
     glow.addColorStop(0, `${colors[0]}60`);
     glow.addColorStop(0.5, `${colors[1]}90`);
@@ -174,15 +182,14 @@ const GameCanvas = () => {
     ctx.beginPath();
     ctx.ellipse(
       x, y,
-      PORTAL_RADIUS * 0.5, // Mesmo achatamento horizontal do portal
-      PORTAL_RADIUS * 1.5, // Mesmo alongamento vertical do portal
+      PORTAL_RADIUS * 0.5,
+      PORTAL_RADIUS * 1.5,
       0, 0, Math.PI * 2
     );
     ctx.fillStyle = glow;
     ctx.fill();
     ctx.restore();
   
-    // Partículas de glow (mantido)
     particles.filter(p => p.size > 4).forEach(p => {
       const alpha = 0.4 * (1 - p.z);
       ctx.beginPath();
@@ -191,33 +198,21 @@ const GameCanvas = () => {
       ctx.fill();
     });
   
-    // Portal principal (ajustado para ter brilho interno do mesmo tamanho)
-    const portalGradient = ctx.createRadialGradient(
-      x, y, 0,
-      x, y, PORTAL_RADIUS // Gradiente cobrindo toda a área do portal
-    );
+    const portalGradient = ctx.createRadialGradient(x, y, 0, x, y, PORTAL_RADIUS);
     portalGradient.addColorStop(0, `${colors[0]}ff`);
     portalGradient.addColorStop(0.7, `${colors[1]}aa`);
     portalGradient.addColorStop(1, `${colors[1]}00`);
     
     ctx.save();
     ctx.beginPath();
-    ctx.ellipse(
-      x, y,
-      PORTAL_RADIUS * 0.5, // Achatamento horizontal
-      PORTAL_RADIUS * 1.5, // Alongamento vertical
-      0, 0, Math.PI * 2
-    );
+    ctx.ellipse(x, y, PORTAL_RADIUS * 0.5, PORTAL_RADIUS * 1.5, 0, 0, Math.PI * 2);
     ctx.fillStyle = portalGradient;
     ctx.fill();
-    
-    // Borda do portal (mais sutil)
     ctx.strokeStyle = `${colors[2]}cc`;
     ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.restore();
   
-    // Partículas internas (mantido)
     particles.filter(p => p.size <= 4).forEach(p => {
       const alpha = 0.8 * (1 - p.z);
       ctx.beginPath();
@@ -225,11 +220,18 @@ const GameCanvas = () => {
       ctx.fillStyle = `${colors[2]}${Math.floor(alpha * 255).toString(16).padStart(2, '0')}`;
       ctx.fill();
     });
-  
-    // Removido o núcleo brilhante separado (agora integrado no gradiente)
   };
 
-  // Loop de animação
+  // Draw player
+  const drawPlayer = (ctx: CanvasRenderingContext2D) => {
+    const img = new Image();
+    img.src = 'looperman.png';
+    ctx.drawImage(img, player.x, player.y, player.width, player.height);
+    
+    ctx.restore();
+  };
+
+  // Animation loop
   const animate = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -237,11 +239,29 @@ const GameCanvas = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    updatePlayer();
     updateParticles();
-    drawScene(ctx);
+    
+    // Clear canvas
+    ctx.fillStyle = '#050520';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw stars
+    starsRef.current.forEach(star => {
+      ctx.beginPath();
+      ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness})`;
+      ctx.fill();
+    });
+
+    // Draw portals
+    drawVerticalPortal(ctx, BLUE_PORTAL_X(), PORTAL_Y(), ['#00aeff', '#0066ff', '#00f2ff'], blueParticlesRef.current);
+    drawVerticalPortal(ctx, ORANGE_PORTAL_X(), PORTAL_Y(), ['#ff9d00', '#ff5500', '#ffec00'], orangeParticlesRef.current);
+    drawPlayer(ctx);
     animationRef.current = requestAnimationFrame(animate);
   };
 
+  // Initialize game
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -253,13 +273,38 @@ const GameCanvas = () => {
       initPortalParticles();
     };
 
-    window.addEventListener('resize', handleResize);
     handleResize();
     animate();
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      cancelAnimationFrame(animationRef.current!);
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, []);
+
+  // Keyboard event handlers
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        switch(e.key) {
+        case 'ArrowRight': keysPressed.current.right = true; break;
+        case 'd': case 'D': keysPressed.current.d = true; break;
+        }
+    };
+    
+    const handleKeyUp = (e: KeyboardEvent) => {
+        switch(e.key) {
+        case 'ArrowRight': keysPressed.current.right = false; break;
+        case 'd': case 'D': keysPressed.current.d = false; break;
+        }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
 
