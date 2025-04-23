@@ -42,12 +42,21 @@ const GameCanvas = () => {
     speed: 5,
     image: null
   });
+  const playerRef = useRef<Player>({
+    x: 65,
+    y: 420,
+    width: 60,
+    height: 80,
+    speed: 5,
+    image: null
+  });
   const keysPressed = useRef({
     left: false,
     right: false,
     a: false,
     d: false
   });
+  const [loops, setLoops] = useState(0);
 
   // Portal Configurations
   const PORTAL_RADIUS = 70;
@@ -146,25 +155,43 @@ const GameCanvas = () => {
     }
   };
 
-  // Update player position - now modifies player ref directly
+  // Check collision between player and portal
+  const checkPortalCollision = (portalX: number) => {
+    const playerCenterX = playerRef.current.x + playerRef.current.width / 2;
+    const playerCenterY = playerRef.current.y + playerRef.current.height / 2;
+    const portalCenterY = PORTAL_Y();
+    
+    const dx = playerCenterX - portalX;
+    const dy = playerCenterY - portalCenterY;
+    
+    const portalWidth = PORTAL_RADIUS * 0.5;
+    const portalHeight = PORTAL_RADIUS * 1.5;
+    
+    const normalizedDistance = (dx * dx) / (portalWidth * portalWidth) + 
+                             (dy * dy) / (portalHeight * portalHeight);
+    
+    return normalizedDistance <= 0.7;
+  };
+
+  // Update player position
   const updatePlayer = () => {
     const { right, d } = keysPressed.current;
     let moveX = 0;
-
-    if (right || d) moveX += player.speed;
-
-    if (moveX !== 0 && canvasRef.current) {
-      const newX = player.x + moveX;
-      const boundedX = Math.max(0, Math.min(newX, canvasRef.current.width - player.width));
-      
-      // Update player position directly in the ref
-      player.x = boundedX;
-      
-      // Force re-render by updating state with a new object
-      setPlayer({...player});
+    if (right || d) moveX += playerRef.current.speed;
+  
+    if (canvasRef.current) {
+      let newX = playerRef.current.x + moveX;
+      newX = Math.max(0, Math.min(newX, canvasRef.current.width - playerRef.current.width));
+  
+      if (checkPortalCollision(ORANGE_PORTAL_X())) {
+        playerRef.current.x = BLUE_PORTAL_X() - playerRef.current.width / 2;
+        setLoops(l => l + 1);
+      } else if (moveX !== 0) {
+        playerRef.current.x = newX;
+      }
     }
   };
-
+  
   // Draw vertical portal
   const drawVerticalPortal = (
     ctx: CanvasRenderingContext2D,
@@ -226,9 +253,16 @@ const GameCanvas = () => {
   const drawPlayer = (ctx: CanvasRenderingContext2D) => {
     const img = new Image();
     img.src = 'looperman.png';
-    ctx.drawImage(img, player.x, player.y, player.width, player.height);
-    
+    ctx.drawImage(img, playerRef.current.x, playerRef.current.y, playerRef.current.width, playerRef.current.height);
     ctx.restore();
+  };
+
+  // Draw score
+  const drawScore = (ctx: CanvasRenderingContext2D) => {
+    ctx.font = '24px Arial';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Loops: ${loops}`, 20, 40);
   };
 
   // Animation loop
@@ -258,6 +292,7 @@ const GameCanvas = () => {
     drawVerticalPortal(ctx, BLUE_PORTAL_X(), PORTAL_Y(), ['#00aeff', '#0066ff', '#00f2ff'], blueParticlesRef.current);
     drawVerticalPortal(ctx, ORANGE_PORTAL_X(), PORTAL_Y(), ['#ff9d00', '#ff5500', '#ffec00'], orangeParticlesRef.current);
     drawPlayer(ctx);
+    drawScore(ctx);
     animationRef.current = requestAnimationFrame(animate);
   };
 
@@ -269,42 +304,60 @@ const GameCanvas = () => {
     const handleResize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      initStars(canvas);
-      initPortalParticles();
+      if (starsRef.current.length === 0) { // Only initialize stars once
+        initStars(canvas);
+        initPortalParticles();
+      }
     };
 
     handleResize();
     animate();
 
+    // Sync playerRef with player state
+    const syncRef = setInterval(() => {
+      playerRef.current = player;
+    }, 16);
+
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
+      clearInterval(syncRef);
     };
-  }, []);
+  }, [loops]);
 
   // Keyboard event handlers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        switch(e.key) {
-        case 'ArrowRight': keysPressed.current.right = true; break;
-        case 'd': case 'D': keysPressed.current.d = true; break;
-        }
+      switch(e.key) {
+        case 'ArrowRight': 
+          keysPressed.current.right = true; 
+          break;
+        case 'd': 
+        case 'D': 
+          keysPressed.current.d = true; 
+          break;
+      }
     };
     
     const handleKeyUp = (e: KeyboardEvent) => {
-        switch(e.key) {
-        case 'ArrowRight': keysPressed.current.right = false; break;
-        case 'd': case 'D': keysPressed.current.d = false; break;
-        }
+      switch(e.key) {
+        case 'ArrowRight': 
+          keysPressed.current.right = false; 
+          break;
+        case 'd': 
+        case 'D': 
+          keysPressed.current.d = false; 
+          break;
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
     return () => {
-        window.removeEventListener('keydown', handleKeyDown);
-        window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
 
