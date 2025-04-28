@@ -50,6 +50,7 @@ const GameCanvas = () => {
     speed: 5,
     image: null
   });
+  const playerImageRef = useRef<HTMLImageElement | null>(null);
   const keysPressed = useRef({
     left: false,
     right: false,
@@ -249,12 +250,25 @@ const GameCanvas = () => {
     });
   };
 
-  // Draw player
-  const drawPlayer = (ctx: CanvasRenderingContext2D) => {
+  useEffect(() => {
     const img = new Image();
     img.src = 'looperman.png';
-    ctx.drawImage(img, playerRef.current.x, playerRef.current.y, playerRef.current.width, playerRef.current.height);
-    ctx.restore();
+    img.onload = () => {
+      playerImageRef.current = img;
+    };
+  }, []);
+
+  // drawPlayer function
+  const drawPlayer = (ctx: CanvasRenderingContext2D) => {
+    if (playerImageRef.current) {
+      ctx.drawImage(
+        playerImageRef.current, 
+        playerRef.current.x, 
+        playerRef.current.y, 
+        playerRef.current.width, 
+        playerRef.current.height
+      );
+    }
   };
 
   // Draw score
