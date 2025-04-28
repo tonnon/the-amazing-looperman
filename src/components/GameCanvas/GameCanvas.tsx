@@ -27,6 +27,15 @@ interface Player {
   image: HTMLImageElement | null;
 }
 
+interface Enemy {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  speed: number;
+  direction: number; // 1 for down, -1 for up
+}
+
 const GameCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const starsRef = useRef<Star[]>([]);
@@ -52,12 +61,13 @@ const GameCanvas = () => {
   });
   const playerImageRef = useRef<HTMLImageElement | null>(null);
   const keysPressed = useRef({
-    left: false,
     right: false,
-    a: false,
     d: false
   });
   const [loops, setLoops] = useState(0);
+  const enemyImageRef = useRef<HTMLImageElement | null>(null);
+  const [enemies, setEnemies] = useState<Enemy[]>([]);
+  const enemiesRef = useRef<Enemy[]>([]);
 
   // Portal Configurations
   const PORTAL_RADIUS = 70;
@@ -84,6 +94,28 @@ const GameCanvas = () => {
   const initPortalParticles = () => {
     blueParticlesRef.current = createParticles(true);
     orangeParticlesRef.current = createParticles(false);
+  };
+
+  // Initialize enemies
+  const initEnemies = (canvas: HTMLCanvasElement) => {
+    const newEnemies = Array.from({ length: 3 }).map((_, i) => {
+      const x = canvas.width * (0.3 + i * 0.2);
+      const y = Math.random() * canvas.height;
+      const speed = 1 + Math.random() * 2; // Random speed between 1-3
+      const direction = Math.random() > 0.5 ? 1 : -1; // Random initial direction
+      
+      return {
+        x,
+        y,
+        width: 50,
+        height: 50,
+        speed,
+        direction
+      };
+    });
+    
+    setEnemies(newEnemies);
+    enemiesRef.current = newEnemies;
   };
 
   // Create particles
@@ -156,24 +188,6 @@ const GameCanvas = () => {
     }
   };
 
-  // Check collision between player and portal
-  const checkPortalCollision = (portalX: number) => {
-    const playerCenterX = playerRef.current.x + playerRef.current.width / 2;
-    const playerCenterY = playerRef.current.y + playerRef.current.height / 2;
-    const portalCenterY = PORTAL_Y();
-    
-    const dx = playerCenterX - portalX;
-    const dy = playerCenterY - portalCenterY;
-    
-    const portalWidth = PORTAL_RADIUS * 0.5;
-    const portalHeight = PORTAL_RADIUS * 1.5;
-    
-    const normalizedDistance = (dx * dx) / (portalWidth * portalWidth) + 
-                             (dy * dy) / (portalHeight * portalHeight);
-    
-    return normalizedDistance <= 0.7;
-  };
-
   // Update player position
   const updatePlayer = () => {
     const { right, d } = keysPressed.current;
@@ -192,7 +206,51 @@ const GameCanvas = () => {
       }
     }
   };
-  
+
+  // Update enemies
+  const updateEnemies = () => {
+    if (!canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const updatedEnemies = enemiesRef.current.map(enemy => {
+      let newY = enemy.y + (enemy.speed * enemy.direction);
+      
+      // Reverse direction if hitting top or bottom
+      if (newY <= 0 || newY + enemy.height >= canvas.height) {
+        return {
+          ...enemy,
+          y: newY <= 0 ? 0 : canvas.height - enemy.height,
+          direction: -enemy.direction
+        };
+      }
+      
+      return {
+        ...enemy,
+        y: newY
+      };
+    });
+
+    enemiesRef.current = updatedEnemies;
+  };
+
+  // Check collision between player and portal
+  const checkPortalCollision = (portalX: number) => {
+    const playerCenterX = playerRef.current.x + playerRef.current.width / 2;
+    const playerCenterY = playerRef.current.y + playerRef.current.height / 2;
+    const portalCenterY = PORTAL_Y();
+    
+    const dx = playerCenterX - portalX;
+    const dy = playerCenterY - portalCenterY;
+    
+    const portalWidth = PORTAL_RADIUS * 0.5;
+    const portalHeight = PORTAL_RADIUS * 1.5;
+    
+    const normalizedDistance = (dx * dx) / (portalWidth * portalWidth) + 
+                             (dy * dy) / (portalHeight * portalHeight);
+    
+    return normalizedDistance <= 0.7;
+  };
+
   // Draw vertical portal
   const drawVerticalPortal = (
     ctx: CanvasRenderingContext2D,
@@ -256,6 +314,12 @@ const GameCanvas = () => {
     img.onload = () => {
       playerImageRef.current = img;
     };
+
+    const enemyImg = new Image();
+    enemyImg.src = 'enemy.png';
+    enemyImg.onload = () => {
+      enemyImageRef.current = enemyImg;
+    };
   }, []);
 
   // drawPlayer function
@@ -267,6 +331,19 @@ const GameCanvas = () => {
         playerRef.current.y, 
         playerRef.current.width, 
         playerRef.current.height
+      );
+    }
+  };
+
+  // Draw enemy
+  const drawEnemy = (ctx: CanvasRenderingContext2D, enemy: Enemy) => {
+    if (enemyImageRef.current) {
+      ctx.drawImage(
+        enemyImageRef.current,
+        enemy.x,
+        enemy.y,
+        enemy.width,
+        enemy.height
       );
     }
   };
@@ -288,6 +365,7 @@ const GameCanvas = () => {
     if (!ctx) return;
 
     updatePlayer();
+    updateEnemies();
     updateParticles();
     
     // Clear canvas
@@ -306,6 +384,7 @@ const GameCanvas = () => {
     drawVerticalPortal(ctx, BLUE_PORTAL_X(), PORTAL_Y(), ['#00aeff', '#0066ff', '#00f2ff'], blueParticlesRef.current);
     drawVerticalPortal(ctx, ORANGE_PORTAL_X(), PORTAL_Y(), ['#ff9d00', '#ff5500', '#ffec00'], orangeParticlesRef.current);
     drawPlayer(ctx);
+    enemiesRef.current.forEach(enemy => drawEnemy(ctx, enemy));
     drawScore(ctx);
     animationRef.current = requestAnimationFrame(animate);
   };
@@ -321,6 +400,7 @@ const GameCanvas = () => {
       if (starsRef.current.length === 0) { // Only initialize stars once
         initStars(canvas);
         initPortalParticles();
+        initEnemies(canvas);
       }
     };
 
