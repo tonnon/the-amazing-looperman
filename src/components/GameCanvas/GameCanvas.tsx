@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './GameCanvas.css';
+import GameOverModal from '../GameOverModal/GameOverModal';
 
 interface Star {
   x: number;
@@ -44,16 +45,16 @@ const GameCanvas = () => {
   const glowPulseRef = useRef<number>(0);
   const animationRef = useRef<number>();
   const [player, setPlayer] = useState<Player>({
-    x: 65,
-    y: 420,
+    x: 65, // Will be set dynamically in useEffect
+    y: window.innerHeight * 0.46, // Dynamic Y position based on screen height
     width: 60,
     height: 80,
     speed: 5,
     image: null
   });
   const playerRef = useRef<Player>({
-    x: 65,
-    y: 420,
+    x: 65, // Will be set dynamically in useEffect
+    y: window.innerHeight * 0.5, // Dynamic Y position based on screen height
     width: 60,
     height: 80,
     speed: 5,
@@ -68,6 +69,8 @@ const GameCanvas = () => {
   const enemyImageRef = useRef<HTMLImageElement | null>(null);
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const enemiesRef = useRef<Enemy[]>([]);
+  const [gameOver, setGameOver] = useState(false);
+  const isGameOverRef = useRef(false);
 
   // Portal Configurations
   const PORTAL_RADIUS = 70;
@@ -98,8 +101,8 @@ const GameCanvas = () => {
 
   // Initialize enemies
   const initEnemies = (canvas: HTMLCanvasElement) => {
-    const newEnemies = Array.from({ length: 3 }).map((_, i) => {
-      const x = canvas.width * (0.3 + i * 0.2);
+    const newEnemies = Array.from({ length: 4 }).map((_, i) => {
+      const x = canvas.width * (0.3 + i * 0.15);
       const y = Math.random() * canvas.height;
       const speed = 1 + Math.random() * 2; // Random speed between 1-3
       const direction = Math.random() > 0.5 ? 1 : -1; // Random initial direction
@@ -188,8 +191,27 @@ const GameCanvas = () => {
     }
   };
 
+  // Increase enemy speeds
+  const increaseEnemySpeeds = () => {
+    if (enemiesRef.current.length === 0) return;
+    
+    const updatedEnemies = enemiesRef.current.map(enemy => {
+      // Increase speed by 10%
+      const newSpeed = enemy.speed * 1.1;
+      
+      return {
+        ...enemy,
+        speed: newSpeed
+      };
+    });
+    
+    enemiesRef.current = updatedEnemies;
+  };
+
   // Update player position
   const updatePlayer = () => {
+    if (gameOver || isGameOverRef.current) return;
+    
     const { right, d } = keysPressed.current;
     let moveX = 0;
     if (right || d) moveX += playerRef.current.speed;
@@ -199,17 +221,57 @@ const GameCanvas = () => {
       newX = Math.max(0, Math.min(newX, canvasRef.current.width - playerRef.current.width));
   
       if (checkPortalCollision(ORANGE_PORTAL_X())) {
-        playerRef.current.x = BLUE_PORTAL_X() - playerRef.current.width / 2;
+        // Position player perfectly centered in the blue portal
+        playerRef.current.x = BLUE_PORTAL_X() - playerRef.current.width/2;
+        playerRef.current.y = PORTAL_Y() - playerRef.current.height/2;
         setLoops(l => l + 1);
+        increaseEnemySpeeds();
       } else if (moveX !== 0) {
         playerRef.current.x = newX;
       }
     }
   };
 
+  // Check collision between player and enemy
+  const checkEnemyCollision = () => {
+    if (gameOver || isGameOverRef.current) return;
+
+    const playerHitbox = {
+      x: playerRef.current.x + playerRef.current.width * 0.2,
+      y: playerRef.current.y + playerRef.current.height * 0.2,
+      width: playerRef.current.width * 0.6,
+      height: playerRef.current.height * 0.6
+    };
+    
+    for (let enemy of enemiesRef.current) {
+      const enemyHitbox = {
+        x: enemy.x + enemy.width * 0.2,
+        y: enemy.y + enemy.height * 0.2,
+        width: enemy.width * 0.6,
+        height: enemy.height * 0.6
+      };
+      
+      if (
+        playerHitbox.x < enemyHitbox.x + enemyHitbox.width &&
+        playerHitbox.x + playerHitbox.width > enemyHitbox.x &&
+        playerHitbox.y < enemyHitbox.y + enemyHitbox.height &&
+        playerHitbox.y + playerHitbox.height > enemyHitbox.y
+      ) {
+        setGameOver(true);
+        isGameOverRef.current = true;
+        // Clear key presses to stop movement
+        keysPressed.current = {
+          right: false,
+          d: false
+        };
+        return;
+      }
+    }
+  };
+
   // Update enemies
   const updateEnemies = () => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || gameOver) return;
 
     const canvas = canvasRef.current;
     const updatedEnemies = enemiesRef.current.map(enemy => {
@@ -308,6 +370,33 @@ const GameCanvas = () => {
     });
   };
 
+  // Reset game
+  const resetGame = () => {
+    if (!canvasRef.current) return;
+    
+    // Start at blue portal position - use same positioning as initial setup
+    const bluePortalX = BLUE_PORTAL_X();
+    const portalY = PORTAL_Y();
+    
+    const newPlayer = {
+      x: bluePortalX - playerRef.current.width/2, // Center horizontally in portal, identical to initial setup
+      y: portalY - playerRef.current.height/2, // Center vertically in portal, identical to initial setup
+      width: 60,
+      height: 80,
+      speed: 5,
+      image: playerImageRef.current
+    };
+    
+    // Update both player references to ensure consistency
+    playerRef.current = newPlayer;
+    setPlayer(newPlayer);
+    
+    setLoops(0);
+    setGameOver(false);
+    isGameOverRef.current = false;
+    initEnemies(canvasRef.current);
+  };
+
   useEffect(() => {
     const img = new Image();
     img.src = 'looperman.png';
@@ -367,6 +456,7 @@ const GameCanvas = () => {
     updatePlayer();
     updateEnemies();
     updateParticles();
+    checkEnemyCollision();
     
     // Clear canvas
     ctx.fillStyle = '#050520';
@@ -397,19 +487,54 @@ const GameCanvas = () => {
     const handleResize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      
+      // Update portal-related positions and player position when screen resizes
       if (starsRef.current.length === 0) { // Only initialize stars once
         initStars(canvas);
         initPortalParticles();
         initEnemies(canvas);
+        
+        // Initialize player position perfectly centered in blue portal
+        const bluePortalX = BLUE_PORTAL_X();
+        const portalY = PORTAL_Y();
+        const newPlayer = {
+          ...playerRef.current,
+          x: bluePortalX - playerRef.current.width/2, // Perfect horizontal center
+          y: portalY - playerRef.current.height/2 // Perfect vertical center
+        };
+        playerRef.current = newPlayer;
+        setPlayer(newPlayer);
+      } else {
+        // Update player position if game is not in progress
+        if (!gameOver && loops === 0) {
+          const newPortalY = PORTAL_Y();
+          const bluePortalX = BLUE_PORTAL_X();
+          const newPlayer = {
+            ...playerRef.current,
+            x: bluePortalX - playerRef.current.width/2, // Perfect horizontal center
+            y: newPortalY - playerRef.current.height/2 // Perfect vertical center
+          };
+          playerRef.current = newPlayer;
+          setPlayer(newPlayer);
+        }
+        
+        // Reinitialize particles to match new dimensions
+        initPortalParticles();
       }
     };
 
     handleResize();
+    
+    // Add event listener for resize
+    window.addEventListener('resize', handleResize);
+    
     animate();
 
     // Sync playerRef with player state
     const syncRef = setInterval(() => {
-      playerRef.current = player;
+      if (!gameOver && !isGameOverRef.current) {
+        playerRef.current = player;
+      }
     }, 16);
 
     return () => {
@@ -417,12 +542,15 @@ const GameCanvas = () => {
         cancelAnimationFrame(animationRef.current);
       }
       clearInterval(syncRef);
+      window.removeEventListener('resize', handleResize);
     };
-  }, [loops]);
+  }, [loops, gameOver]);
 
   // Keyboard event handlers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (gameOver || isGameOverRef.current) return;
+      
       switch(e.key) {
         case 'ArrowRight': 
           keysPressed.current.right = true; 
@@ -453,9 +581,18 @@ const GameCanvas = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [gameOver]);
 
-  return <canvas ref={canvasRef} className="game-canvas" />;
+  return (
+    <>
+      <canvas ref={canvasRef} className="game-canvas" />
+      <GameOverModal 
+        show={gameOver} 
+        loops={loops}
+        onRestart={resetGame}
+      />
+    </>
+  );
 };
 
 export default GameCanvas;
